@@ -13,12 +13,13 @@ class Promise
     @fulfilled = true
     @resolved = true
     @value = value
-    @notification&.signal(value)
+    @notification&.signal(@value)
 
     nil
   end
 
   class Rejection < StandardError ; end
+  class Cancel < StandardError ; end
 
   def reject(error)
     raise ArgumentError.new('already resolved') if @resolved
@@ -29,6 +30,7 @@ class Promise
     else
       @value = Rejection.new(error)
     end
+    @notification&.signal(@value)
 
     nil
   end
@@ -60,6 +62,16 @@ class Promise
     @notification = Async::Condition.new
     @notification.wait
   end
+
+  private def force_stop
+    return if @resolved
+
+    @resolved = true
+    @value = Cancel.new
+    @notification&.signal(@value)
+
+    nil
+  end
 end
 
 require 'async/condition'
@@ -84,6 +96,78 @@ class Future
   end
 
   def value!
-    @task.result
+    result = @task.result
+    if @force_stopped
+      raise Cancel.new
+    else
+      result
+    end
+  end
+
+  class Cancel < StandardError ; end
+
+  # internal use only
+  private def force_stop
+    return if resolved?
+
+    @force_stopped = true
+    @task.stop
+  end
+end
+
+class AwaitAll
+  def initialize(*promises_or_futures)
+    @promise = Promise.new
+    @promises_or_futures = promises_or_futures
+    @tasks = promises_or_futures.map do |item|
+      Async do
+        begin
+          item.value!
+        rescue Promise::Cancel, Future::Cancel
+          # pass
+        rescue => err
+          reject(err)
+        end
+      end
+    end
+    Async { fulfill(@tasks.map(&:result)) }
+  end
+
+  private def fulfill(results)
+    return if @promise.resolved?
+
+    @promise.fulfill(results)
+  end
+
+  private def reject(error)
+    return if @promise.resolved?
+
+    @promises_or_futures.each do |promise_or_future|
+      promise_or_future.send(:force_stop)
+    end
+    @promise.reject(error)
+  end
+
+  def resolved?
+    @promise.resolved?
+  end
+
+  def fulfilled?
+    @promise.fulfilled?
+  end
+
+  def rejected?
+    @promise.rejected?
+  end
+
+  def value!
+    @promise.value!
+  end
+
+  private def force_stop
+    @promises_or_futures.each do |promise_or_future|
+      promise_or_future.send(:force_stop)
+    end
+    @promise.send(:force_stop)
   end
 end

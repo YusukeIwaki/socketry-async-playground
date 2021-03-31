@@ -17,11 +17,20 @@ RSpec.describe 'socketry/sync' do
       expect(promise).not_to be_rejected
     end
 
-    it 'blocks until resolved' do
+    it 'blocks until fulfilled' do
       time_start = Time.now
 
       Async { |t| t.sleep 2 ; promise.fulfill }
       promise.value!
+
+      expect(Time.now - time_start).to be > 1
+    end
+
+    it 'blocks until rejected' do
+      time_start = Time.now
+
+      Async { |t| t.sleep 2 ; promise.reject("invalid") }
+      expect { promise.value! }.to raise_error(/invalid/)
 
       expect(Time.now - time_start).to be > 1
     end
@@ -55,6 +64,13 @@ RSpec.describe 'socketry/sync' do
       promise.fulfill(123)
       Timeout.timeout(1) { expect(promise.value!).to eq(123) }
     end
+
+    it 'can force_stop' do
+      Async { |t| t.sleep 1 ; promise.send(:force_stop) }
+      Timeout.timeout(2) {
+        expect { promise.value! }.to raise_error(Promise::Cancel)
+      }
+    end
   end
 
   describe 'Future' do
@@ -83,6 +99,49 @@ RSpec.describe 'socketry/sync' do
       expect(future).not_to be_fulfilled
       expect(future).to be_rejected
       expect { future.value! }.to raise_error(/invalid/)
+    end
+
+    it 'can force_stop' do
+      future = Future.new { |t| t.sleep 3 ; raise 'invalid' }
+      Async { |t| t.sleep 1 ; future.send(:force_stop) }
+      Timeout.timeout(2) {
+        expect { future.value! }.to raise_error(Future::Cancel)
+      }
+    end
+  end
+
+  describe 'AwaitAll' do
+    around do |example|
+      Async { example.run }
+    end
+
+    it 'wait all result' do
+      all = AwaitAll.new(
+        Future.new { |t| t.sleep 2 ; 2 },
+        Future.new { |t| t.sleep 3 ; 3 },
+        Future.new { |t| 1 },
+      )
+      time_start = Time.now
+      expect(all.value!).to eq([2, 3, 1])
+      elapsed_time = Time.now - time_start
+      expect(Time.now - time_start).to be > 2
+      expect(Time.now - time_start).to be < 4
+    end
+
+    it 'wait first rejection' do
+      items = [
+        Promise.new,
+        Future.new { |t| t.sleep 2 ; raise "Boom" },
+        Future.new { |t| 1 },
+      ]
+      all = AwaitAll.new(*items)
+      time_start = Time.now
+      expect { all.value! }.to raise_error(/Boom/)
+      elapsed_time = Time.now - time_start
+      expect(Time.now - time_start).to be > 1
+      expect(Time.now - time_start).to be < 3
+      expect(items.first).to be_resolved
+      expect(items.last).to be_resolved
     end
   end
 end
