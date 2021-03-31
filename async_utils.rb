@@ -115,6 +115,16 @@ class Future
   end
 end
 
+class SimpleAwaitAll
+  def initialize(*promises_or_futures)
+    @items = promises_or_futures
+  end
+
+  def value!
+    @items.map(&:value!)
+  end
+end
+
 class AwaitAll
   def initialize(*promises_or_futures)
     @promise = Promise.new

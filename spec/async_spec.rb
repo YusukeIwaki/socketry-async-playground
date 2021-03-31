@@ -110,6 +110,41 @@ RSpec.describe 'socketry/sync' do
     end
   end
 
+  describe 'SimpleAwaitAll' do
+    around do |example|
+      Async { example.run }
+    end
+
+    it 'wait all result' do
+      all = SimpleAwaitAll.new(
+        Future.new { |t| t.sleep 2 ; 2 },
+        Future.new { |t| t.sleep 3 ; 3 },
+        Future.new { |t| 1 },
+      )
+      time_start = Time.now
+      expect(all.value!).to eq([2, 3, 1])
+      elapsed_time = Time.now - time_start
+      expect(Time.now - time_start).to be > 2
+      expect(Time.now - time_start).to be < 4
+    end
+
+    xit 'wait first rejection' do
+      items = [
+        Promise.new,
+        Future.new { |t| t.sleep 2 ; raise "Boom" },
+        Future.new { |t| 1 },
+      ]
+      all = AwaitAll.new(*items)
+      time_start = Time.now
+      expect { all.value! }.to raise_error(/Boom/)
+      elapsed_time = Time.now - time_start
+      expect(Time.now - time_start).to be > 1
+      expect(Time.now - time_start).to be < 3
+      expect(items.first).to be_resolved
+      expect(items.last).to be_resolved
+    end
+  end
+
   describe 'AwaitAll' do
     around do |example|
       Async { example.run }
