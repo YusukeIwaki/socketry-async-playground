@@ -61,3 +61,29 @@ class Promise
     @notification.wait
   end
 end
+
+require 'async/condition'
+
+class Future
+  def initialize(&block)
+    raise ArgumentError.new('block must be given') unless block
+
+    @task = Async(&block)
+  end
+
+  def resolved?
+    %i(complete stopped failed).include?(@task.status)
+  end
+
+  def fulfilled?
+    @task.status == :complete
+  end
+
+  def rejected?
+    %i(stopped failed).include?(@task.status)
+  end
+
+  def value!
+    @task.result
+  end
+end
