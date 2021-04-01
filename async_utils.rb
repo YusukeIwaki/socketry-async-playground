@@ -181,3 +181,62 @@ class AwaitAll
     @promise.send(:force_stop)
   end
 end
+
+class AwaitAny
+  def initialize(*promises_or_futures)
+    @promise = Promise.new
+    @promises_or_futures = promises_or_futures
+    promises_or_futures.each do |item|
+      Async do
+        begin
+          fulfill(item.value!)
+        rescue Promise::Cancel, Future::Cancel
+          # pass
+        rescue => err
+          reject(err)
+        end
+      end
+    end
+  end
+
+  private def fulfill(result)
+    return if @promise.resolved?
+
+    @promises_or_futures.each do |promise_or_future|
+      promise_or_future.send(:force_stop)
+    end
+    @promise.fulfill(result)
+  end
+
+  private def reject(error)
+    return if @promise.resolved?
+
+    @promises_or_futures.each do |promise_or_future|
+      promise_or_future.send(:force_stop)
+    end
+    @promise.reject(error)
+  end
+
+  def resolved?
+    @promise.resolved?
+  end
+
+  def fulfilled?
+    @promise.fulfilled?
+  end
+
+  def rejected?
+    @promise.rejected?
+  end
+
+  def value!
+    @promise.value!
+  end
+
+  private def force_stop
+    @promises_or_futures.each do |promise_or_future|
+      promise_or_future.send(:force_stop)
+    end
+    @promise.send(:force_stop)
+  end
+end

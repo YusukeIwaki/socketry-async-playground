@@ -124,8 +124,8 @@ RSpec.describe 'socketry/sync' do
       time_start = Time.now
       expect(all.value!).to eq([2, 3, 1])
       elapsed_time = Time.now - time_start
-      expect(Time.now - time_start).to be > 2
-      expect(Time.now - time_start).to be < 4
+      expect(elapsed_time).to be > 2
+      expect(elapsed_time).to be < 4
     end
 
     xit 'wait first rejection' do
@@ -138,8 +138,8 @@ RSpec.describe 'socketry/sync' do
       time_start = Time.now
       expect { all.value! }.to raise_error(/Boom/)
       elapsed_time = Time.now - time_start
-      expect(Time.now - time_start).to be > 1
-      expect(Time.now - time_start).to be < 3
+      expect(elapsed_time).to be > 1
+      expect(elapsed_time).to be < 3
       expect(items.first).to be_resolved
       expect(items.last).to be_resolved
     end
@@ -159,8 +159,8 @@ RSpec.describe 'socketry/sync' do
       time_start = Time.now
       expect(all.value!).to eq([2, 3, 1])
       elapsed_time = Time.now - time_start
-      expect(Time.now - time_start).to be > 2
-      expect(Time.now - time_start).to be < 4
+      expect(elapsed_time).to be > 2
+      expect(elapsed_time).to be < 4
     end
 
     it 'wait first rejection' do
@@ -173,10 +173,43 @@ RSpec.describe 'socketry/sync' do
       time_start = Time.now
       expect { all.value! }.to raise_error(/Boom/)
       elapsed_time = Time.now - time_start
-      expect(Time.now - time_start).to be > 1
-      expect(Time.now - time_start).to be < 3
+      expect(elapsed_time).to be > 1
+      expect(elapsed_time).to be < 3
       expect(items.first).to be_resolved
       expect(items.last).to be_resolved
+    end
+  end
+
+  describe 'AwaitAny' do
+    around do |example|
+      Async { example.run }
+    end
+
+    it 'wait first result' do
+      items = [
+        Future.new { |t| t.sleep 2 ; raise "error-2" },
+        Future.new { |t| t.sleep 3 ; raise "error-3" },
+        Future.new { |t| 1 },
+      ]
+      all = AwaitAny.new(*items)
+      Timeout.timeout(1) { all.value! }
+      expect(all.value!).to eq(1)
+      expect(items).to all(be_resolved)
+    end
+
+    it 'wait first rejection' do
+      items = [
+        Promise.new,
+        Future.new { |t| t.sleep 2 ; raise "Boom" },
+        Future.new { |t| t.sleep 3 ; 3 },
+      ]
+      all = AwaitAny.new(*items)
+      time_start = Time.now
+      expect { all.value! }.to raise_error(/Boom/)
+      elapsed_time = Time.now - time_start
+      expect(elapsed_time).to be > 1
+      expect(elapsed_time).to be < 3
+      expect(items).to all(be_resolved)
     end
   end
 end
